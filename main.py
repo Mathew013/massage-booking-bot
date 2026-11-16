@@ -37,6 +37,7 @@ WORK_END = 20     # последний слот 19:00 (заканчиваетс�
 DAYS_AHEAD = 7    # на сколько дней вперёд можно записаться
 REMIND_BEFORE_HOURS = 2   # за сколько часов до сеанса напоминать
 WEEKDAYS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
+SITE_URL = "https://mathew013.github.io/massage-site/"   # адрес сайта
 
 
 # ---------- БАЗА ДАННЫХ ----------
@@ -194,9 +195,10 @@ CANCEL_ROW = [InlineKeyboardButton(text="❌ Отмена", callback_data="cance
 
 
 def kb_start():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📝 Записаться", callback_data="book")]
-    ])
+    rows = [[InlineKeyboardButton(text="📝 Записаться", callback_data="book")]]
+    if SITE_URL:
+        rows.append([InlineKeyboardButton(text="🌐 Наш сайт", url=SITE_URL)])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def kb_services():
