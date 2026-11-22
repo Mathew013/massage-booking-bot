@@ -14,5 +14,8 @@ Python 3.12, aiogram 3, SQLite
 
 ## Запуск
 1. `pip install -r requirements.txt`
-2. Скопировать `.env.example` в `.env` и заполнить `BOT_TOKEN` и `ADMIN_ID`
+2. Скопировать `.env.example` в `.env` и заполнить:
+   - `BOT_TOKEN` — токен бота от @BotFather
+   - `ADMIN_ID` — Telegram ID мастера (можно узнать командой `/myid`)
+   - `TIMEZONE` — часовой пояс салона, например `Europe/Moscow` (по нему считаются свободные слоты и напоминания)
 3. `python main.py`
