@@ -6,6 +6,7 @@ import os
 import sqlite3
 from contextlib import contextmanager
 from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from aiogram import Bot, Dispatcher, F, types
 from aiogram.filters import Command, CommandStart
@@ -21,7 +22,16 @@ if not TOKEN:
     raise SystemExit("Не найден BOT_TOKEN в файле .env")
 
 
-ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
+ADMIN_ID = int(os.getenv("ADMIN_ID") or 0)
+if not ADMIN_ID:
+    logging.warning("ADMIN_ID не задан в .env: панель /admin и уведомления мастеру отключены")
+
+
+TIMEZONE = os.getenv("TIMEZONE") or "Europe/Moscow"
+try:
+    TZ = ZoneInfo(TIMEZONE)
+except (ZoneInfoNotFoundError, ValueError):
+    raise SystemExit(f"Неизвестный часовой пояс TIMEZONE={TIMEZONE!r} в файле .env")
 
 
 bot = Bot(token=TOKEN)
@@ -38,6 +48,16 @@ DAYS_AHEAD = 7    # на сколько дней вперёд можно зап�
 REMIND_BEFORE_HOURS = 2   # за сколько часов до сеанса напоминать
 WEEKDAYS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
 SITE_URL = "https://mathew013.github.io/massage-site/"   # адрес сайта
+
+
+# ---------- ВРЕМЯ ----------
+def now_local() -> datetime:
+    """Текущее время салона без tzinfo — в том же виде, что день и слот в базе."""
+    return datetime.now(TZ).replace(tzinfo=None)
+
+
+def today_local() -> date:
+    return now_local().date()
 
 
 # ---------- БАЗА ДАННЫХ ----------
@@ -119,7 +139,7 @@ def db_get_busy_slots(day: str) -> list:
 def db_add_booking(user_id: int, client_name: str, service_id: int, day: str, slot: str) -> bool:
     start = datetime.fromisoformat(f"{day} {slot}")
     # если до сеанса уже меньше 2 часов, напоминание не нужно
-    reminded = 1 if start - datetime.now() <= timedelta(hours=REMIND_BEFORE_HOURS) else 0
+    reminded = 1 if start - now_local() <= timedelta(hours=REMIND_BEFORE_HOURS) else 0
     try:
         with db() as conn:
             conn.execute(
@@ -178,7 +198,7 @@ def day_label(d: date) -> str:
 
 def free_slots(day_str: str) -> list:
     busy = db_get_busy_slots(day_str)
-    now = datetime.now()
+    now = now_local()
     is_today = day_str == now.date().isoformat()
     result = []
     for hour in range(WORK_START, WORK_END):
@@ -212,7 +232,7 @@ def kb_services():
 
 
 def kb_days():
-    today = date.today()
+    today = today_local()
     rows, row = [], []
     for i in range(DAYS_AHEAD):
         d = today + timedelta(days=i)
@@ -248,7 +268,7 @@ def kb_confirm():
 
 
 def kb_admin_days():
-    today = date.today()
+    today = today_local()
     rows, row = [], []
     for i in range(DAYS_AHEAD):
         d = today + timedelta(days=i)
@@ -403,7 +423,7 @@ async def confirm_booking(callback: CallbackQuery, state: FSMContext):
                 f"Время: {data['slot']}",
             )
         except Exception:
-            pass
+            logging.exception("Не удалось отправить мастеру уведомление о новой записи")
     await callback.answer("Запись создана")
 
 
@@ -509,8 +529,9 @@ async def admin_delete(callback: CallbackQuery):
             f"К сожалению, ваша запись на {day_label(d)} в {slot} ({service_name}) "
             "отменена мастером. Чтобы записаться снова, нажмите /start",
         )
-    except Exception:
-        pass  # клиент мог заблокировать бота
+    except Exception as e:
+        # клиент мог заблокировать бота
+        logging.warning("Не удалось уведомить клиента %s об отмене записи %s: %s", user_id, booking_id, e)
 
     bookings = db_get_bookings_for_day(day)
     await callback.message.edit_text(
@@ -528,7 +549,7 @@ async def old_button(callback: CallbackQuery):
 
 # ---------- НАПОМИНАНИЯ ----------
 async def send_reminders():
-    now = datetime.now()
+    now = now_local()
     for booking_id, user_id, day, slot, service_name in db_get_unreminded_bookings():
         start = datetime.fromisoformat(f"{day} {slot}")
         if start <= now:
@@ -542,8 +563,9 @@ async def send_reminders():
                     f"Сегодня в {slot} у вас {service_name}.\n"
                     "Ждём вас!",
                 )
-            except Exception:
-                pass  # клиент мог заблокировать бота
+            except Exception as e:
+                # клиент мог заблокировать бота
+                logging.warning("Не удалось отправить напоминание клиенту %s (запись %s): %s", user_id, booking_id, e)
             db_mark_reminded(booking_id)
 
 
@@ -562,4 +584,5 @@ async def main():
     await dp.start_polling(bot)
 
 
-asyncio.run(main())
+if __name__ == "__main__":
+    asyncio.run(main())
